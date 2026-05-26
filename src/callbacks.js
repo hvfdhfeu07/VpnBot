@@ -57,13 +57,29 @@ async function handleCallback(bot, query) {
     }
 
     const config = getTrialConfig();
+    // Get actual encryption from inbound
+    let encryptionMethod = 'aes-256-gcm';
+    try {
+      const { getServerById } = require('./vpn/serverList');
+      const { getPanel, getClient: getPanelClient, getFirstTrialPanel } = require('./vpn/panelManager');
+      const server = config.serverId ? getServerById(config.serverId) : null;
+      const panelId = (server && server.panelId) ? server.panelId : config.panelId;
+      const trialPanel = panelId ? getPanel(panelId) : getFirstTrialPanel();
+      const client = trialPanel ? getPanelClient(trialPanel.id) : xuiClient;
+      const inboundId = (server && server.inboundId) ? server.inboundId : config.inboundId;
+      const inbound = await client.getInbound(inboundId);
+      if (inbound) {
+        const settings = JSON.parse(inbound.settings);
+        if (settings.method) encryptionMethod = settings.method;
+      }
+    } catch {}
     return bot.editMessageText(
       `${t(userId, 'trial_info_title')}\n\n` +
       `${t(userId, 'trial_free_desc')}\n\n` +
       `${t(userId, 'trial_data')}: *${config.totalGB} GB*\n` +
       `${t(userId, 'trial_expiry')}: *${config.expiryDays} Days*\n` +
       `${t(userId, 'trial_device')}: *${config.ipLimit}*\n` +
-      `${t(userId, 'trial_encryption')}: *aes-256-gcm*\n\n` +
+      `${t(userId, 'trial_encryption')}: *${encryptionMethod}*\n\n` +
       `⚠️ ${t(userId, 'trial_limit_warning')} *${config.maxTrials}* ${t(userId, 'trial_limit_times')}`,
       {
         chat_id: chatId, message_id: messageId,
@@ -150,9 +166,9 @@ async function handleCallback(bot, query) {
   if (data === 'premium_menu') {
     const settings = getCreditSettings();
     const balance = getBalance(userId);
-    let text = `💎 <b>Premium Key (Credit System)</b>\n\n` +
-      `💰 <b>Your Balance:</b> ${balance} Credit\n\n` +
-      `Plan ရွေးပြီး Credit နဲ့ ဝယ်ယူပါ:\n\n`;
+    let text = `${t(userId, 'premium_title')}\n\n` +
+      `${t(userId, 'premium_balance')} ${balance} Credit\n\n` +
+      `${t(userId, 'premium_select_plan')}\n\n`;
 
     const buttons = settings.premiumPlans.map((p) => [
       {
@@ -160,8 +176,8 @@ async function handleCallback(bot, query) {
         callback_data: `premium_credit_${p.id}`,
       },
     ]);
-    buttons.push([{ text: '📋 My Orders', callback_data: 'premium_orders' }]);
-    buttons.push([{ text: '« Back', callback_data: 'back_to_menu' }]);
+    buttons.push([{ text: t(userId, 'premium_my_orders'), callback_data: 'premium_orders' }]);
+    buttons.push([{ text: t(userId, 'back'), callback_data: 'back_to_menu' }]);
 
     return bot.editMessageText(text, {
       chat_id: chatId, message_id: messageId,
@@ -176,34 +192,34 @@ async function handleCallback(bot, query) {
     const settings = getCreditSettings();
     const plan = settings.premiumPlans.find(p => p.id === planId);
     if (!plan) {
-      return bot.editMessageText('❌ Plan မတွေ့ပါ', {
+      return bot.editMessageText(t(userId, 'premium_plan_not_found'), {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
     const balance = getBalance(userId);
 
     return bot.editMessageText(
       `💎 <b>${plan.name}</b>\n\n` +
-      `📦 Data: <b>${plan.dataGB} GB</b>\n` +
-      `📅 Duration: <b>${plan.days} Days</b>\n` +
-      `📱 Devices: <b>${plan.ipLimit}</b>\n` +
+      `${t(userId, 'trial_data')}: <b>${plan.dataGB} GB</b>\n` +
+      `${t(userId, 'trial_expiry')}: <b>${plan.days} Days</b>\n` +
+      `${t(userId, 'trial_device')}: <b>${plan.ipLimit}</b>\n` +
       `💰 Price: <b>${plan.credits} Credit</b>\n\n` +
-      `💰 Your Balance: <b>${balance} Credit</b>\n\n` +
+      `${t(userId, 'premium_balance')} <b>${balance} Credit</b>\n\n` +
       (balance >= plan.credits
-        ? `✅ Credit လုံလောက်ပါတယ်။ ဝယ်မယ် နှိပ်ပါ။`
-        : `❌ Credit မလုံလောက်ပါ။ ${plan.credits - balance} Credit ထပ်လိုပါတယ်။`),
+        ? t(userId, 'premium_sufficient')
+        : `${t(userId, 'premium_insufficient')} ${plan.credits - balance} ${t(userId, 'premium_need_more')}`),
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: balance >= plan.credits
             ? [
-                [{ text: '💰 Credit နဲ့ ဝယ်မယ်', callback_data: `premium_buy_credit_${planId}` }],
+                [{ text: t(userId, 'premium_buy_btn'), callback_data: `premium_buy_credit_${planId}` }],
                 [{ text: '« Plans', callback_data: 'premium_menu' }],
               ]
             : [
-                [{ text: '💰 Credit ထပ်ဝယ်မယ်', callback_data: 'credit_menu' }],
+                [{ text: t(userId, 'premium_topup_btn'), callback_data: 'credit_menu' }],
                 [{ text: '« Plans', callback_data: 'premium_menu' }],
               ],
         },
@@ -217,23 +233,23 @@ async function handleCallback(bot, query) {
     const settings = getCreditSettings();
     const plan = settings.premiumPlans.find(p => p.id === planId);
     if (!plan) {
-      return bot.editMessageText('❌ Plan မတွေ့ပါ', {
+      return bot.editMessageText(t(userId, 'premium_plan_not_found'), {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
 
     const balance = getBalance(userId);
     if (balance < plan.credits) {
-      return bot.editMessageText('❌ Credit မလုံလောက်ပါ', {
+      return bot.editMessageText(t(userId, 'premium_insufficient'), {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
 
     return bot.editMessageText(
       `💎 <b>${plan.name}</b>\n\n` +
-      `Key အမျိုးအစား ရွေးပါ:`,
+      `${t(userId, 'premium_select_type')}`,
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
@@ -259,9 +275,9 @@ async function handleCallback(bot, query) {
     const settings = getCreditSettings();
     const plan = settings.premiumPlans.find(p => p.id === planId);
     if (!plan) {
-      return bot.editMessageText('❌ Plan မတွေ့ပါ', {
+      return bot.editMessageText(t(userId, 'premium_plan_not_found'), {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
 
@@ -272,7 +288,7 @@ async function handleCallback(bot, query) {
 
     if (servers.length === 0) {
       return bot.editMessageText(
-        '❌ ဒီ protocol အတွက် server မရှိသေးပါ။\n\nAdmin ကနေ Premium Control → protocol → server ထည့်ပြီး panel/inbound ချိတ်ဖို့ လိုပါတယ်။',
+        `${t(userId, 'premium_no_server')}\n\n${t(userId, 'premium_no_server_hint')}`,
         {
           chat_id: chatId, message_id: messageId,
           reply_markup: { inline_keyboard: [[{ text: '« Back', callback_data: `premium_buy_credit_${planId}` }]] },
@@ -288,7 +304,7 @@ async function handleCallback(bot, query) {
     buttons.push([{ text: '« Back', callback_data: `premium_buy_credit_${planId}` }]);
 
     return bot.editMessageText(
-      `💎 <b>${plan.name}</b> — ${protoLabel[protocol] || protocol}\n\nServer ရွေးပါ:`,
+      `💎 <b>${plan.name}</b> — ${protoLabel[protocol] || protocol}\n\n${t(userId, 'premium_select_server')}`,
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
@@ -309,9 +325,9 @@ async function handleCallback(bot, query) {
     const settings = getCreditSettings();
     const plan = settings.premiumPlans.find(p => p.id === planId);
     if (!plan) {
-      return bot.editMessageText('❌ Plan မတွေ့ပါ', {
+      return bot.editMessageText(t(userId, 'premium_plan_not_found'), {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
 
@@ -319,27 +335,27 @@ async function handleCallback(bot, query) {
     const { getPanel: getPanelById } = require('./vpn/panelManager');
     const server = getProtocolServerById(protocol, serverId);
     if (!server || !server.panelId) {
-      return bot.editMessageText('❌ Server ကို panel ချိတ်မထားသေးပါ', {
+      return bot.editMessageText(t(userId, 'premium_no_panel'), {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
     if (!server.inboundId) {
-      return bot.editMessageText('❌ Server ကို inbound သတ်မှတ်မထားသေးပါ', {
+      return bot.editMessageText(t(userId, 'premium_no_inbound'), {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
 
     const result = deductCredits(userId, plan.credits, `Premium: ${plan.name}`);
     if (!result) {
-      return bot.editMessageText('❌ Credit မလုံလောက်ပါ', {
+      return bot.editMessageText(t(userId, 'premium_insufficient'), {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
 
-    bot.editMessageText('⏳ Premium key ထုတ်ပေးနေပါတယ်...', {
+    bot.editMessageText(t(userId, 'premium_generating'), {
       chat_id: chatId, message_id: messageId,
     });
 
@@ -547,28 +563,42 @@ async function handleCallback(bot, query) {
     const balance = getBalance(userId);
     const settings = getCreditSettings();
     const ref = getUserReferral(userId);
+    const lang = getUserLang(userId);
+
+    const earnMethods = lang === 'en'
+      ? `<b>How to earn Credit:</b>\n` +
+        `• 👥 Invite 1 friend = ${settings.referralCredit} Credit\n` +
+        `• 🎟 Use Coupon Code\n` +
+        `• Buy Credit from Admin`
+      : `<b>Credit ရနည်း:</b>\n` +
+        `• 👥 Referral invite 1 ယောက် = ${settings.referralCredit} Credit\n` +
+        `• 🎟 Coupon Code သုံးပြီး ရယူ\n` +
+        `• Admin ဆီက Credit ဝယ်ယူ`;
+
+    const useMethods = lang === 'en'
+      ? `<b>How to use Credit:</b>\n` +
+        `• 🔄 Exchange Credit for Key (${settings.creditPerGB} Credit = 1 GB)\n` +
+        `• 💎 Buy Premium Plan with Credit`
+      : `<b>Credit သုံးနည်း:</b>\n` +
+        `• 🔄 Credit နဲ့ Key လဲ (${settings.creditPerGB} Credit = 1 GB)\n` +
+        `• 💎 Credit နဲ့ Premium Plan ဝယ်`;
 
     return bot.editMessageText(
-      `💰 <b>Credit System</b>\n\n` +
-      `💰 <b>Balance:</b> ${balance} Credit\n` +
-      `👥 <b>Referral Earned:</b> ${ref.totalCreditsEarned || 0} Credit\n\n` +
-      `<b>Credit ရနည်း:</b>\n` +
-      `• 👥 Referral invite 1 ယောက် = ${settings.referralCredit} Credit\n` +
-      `• 🎟 Coupon Code သုံးပြီး ရယူ\n` +
-      `• Admin ဆီက Credit ဝယ်ယူ\n\n` +
-      `<b>Credit သုံးနည်း:</b>\n` +
-      `• 🔄 Credit နဲ့ Key လဲ (${settings.creditPerGB} Credit = 1 GB)\n` +
-      `• 💎 Credit နဲ့ Premium Plan ဝယ်`,
+      `${t(userId, 'credit_title')}\n\n` +
+      `${t(userId, 'credit_your_balance')} ${balance} Credit\n` +
+      `👥 <b>Referral:</b> ${ref.totalCreditsEarned || 0} Credit\n\n` +
+      `${earnMethods}\n\n` +
+      `${useMethods}`,
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🔄 Credit → Key လဲမယ်', callback_data: 'credit_exchange' }],
-            [{ text: '💎 Premium ဝယ်မယ်', callback_data: 'premium_menu' }],
-            [{ text: '💵 Credit ဝယ်ယူရန်', callback_data: 'credit_purchase' }],
-            [{ text: '📜 Credit History', callback_data: 'credit_history' }],
-            [{ text: '« Back', callback_data: 'back_to_menu' }],
+            [{ text: t(userId, 'credit_exchange'), callback_data: 'credit_exchange' }],
+            [{ text: t(userId, 'premium_key'), callback_data: 'premium_menu' }],
+            [{ text: t(userId, 'credit_topup'), callback_data: 'credit_purchase' }],
+            [{ text: t(userId, 'credit_history'), callback_data: 'credit_history' }],
+            [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
           ],
         },
       }
@@ -586,13 +616,15 @@ async function handleCallback(bot, query) {
       const cost = parseFloat((gb * rate).toFixed(2));
       return [{ text: `${gb} GB — ${cost} Credit`, callback_data: `credit_buy_${gb}` }];
     });
-    buttons.push([{ text: '« Back', callback_data: 'credit_menu' }]);
+    buttons.push([{ text: t(userId, 'back'), callback_data: 'credit_menu' }]);
 
+    const lang = getUserLang(userId);
+    const selectGB = lang === 'en' ? 'Select GB for your key:' : 'Key ထုတ်ယူချင်တဲ့ GB ရွေးပါ:';
     return bot.editMessageText(
-      `🔄 <b>Credit → Key Exchange</b>\n\n` +
-      `💰 <b>Balance:</b> ${balance} Credit\n` +
+      `${t(userId, 'credit_exchange')}\n\n` +
+      `${t(userId, 'credit_your_balance')} ${balance} Credit\n` +
       `📊 <b>Rate:</b> ${rate} Credit = 1 GB\n\n` +
-      `Key ထုတ်ယူချင်တဲ့ GB ရွေးပါ:`,
+      selectGB,
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
@@ -610,7 +642,7 @@ async function handleCallback(bot, query) {
 
     if (balance < cost) {
       return bot.editMessageText(
-        `❌ Credit မလုံလောက်ပါ\n\n💰 Balance: ${balance}\n💰 Required: ${cost}`,
+        `${t(userId, 'premium_insufficient')}\n\n💰 Balance: ${balance}\n💰 Required: ${cost}`,
         {
           chat_id: chatId, message_id: messageId,
           parse_mode: 'HTML',
@@ -762,15 +794,13 @@ async function handleCallback(bot, query) {
     const { setCouponRedeemState } = require('./middleware/userLogger');
     setCouponRedeemState(userId);
     return bot.editMessageText(
-      `🎟 <b>Coupon Code</b>\n\n` +
-      `Coupon code ရှိရင် ထည့်ပြီး Credit ရယူပါ!\n\n` +
-      `Coupon code ကို ရိုက်ထည့်ပါ:`,
+      `${t(userId, 'coupon_title')}\n\n${t(userId, 'coupon_enter')}`,
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
-            [{ text: '« Back', callback_data: 'back_to_menu' }],
+            [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
           ],
         },
       }
@@ -785,24 +815,28 @@ async function handleCallback(bot, query) {
     const botUsername = (await bot.getMe()).username;
     const refLink = `https://t.me/${botUsername}?start=ref_${userId}`;
     const inviteCount = ref.invitedUsers.length;
+    const lang = getUserLang(userId);
+
+    const inviteHint = lang === 'en'
+      ? `Invite <b>1 friend</b> and earn <b>${config.referralCredit} Credit</b>!`
+      : `သူငယ်ချင်း <b>1 ယောက်</b> invite လုပ်ရင် <b>${config.referralCredit} Credit</b> ရမယ်!`;
 
     let text =
-      `👥 <b>Referral System (Credit)</b>\n\n` +
-      `သူငယ်ချင်း <b>1 ယောက်</b> invite လုပ်ရင်\n` +
-      `💰 <b>${config.referralCredit} Credit</b> ရမယ်!\n\n` +
-      `📊 <b>Invite Count:</b> ${inviteCount} ယောက်\n` +
-      `💰 <b>Total Earned:</b> ${ref.totalCreditsEarned || 0} Credit\n` +
-      `💰 <b>Balance:</b> ${balance} Credit\n\n` +
-      `🔗 <b>Your Referral Link:</b>\n<code>${refLink}</code>\n\n` +
-      `<i>Link ကို share ပြီး သူငယ်ချင်းတွေကို invite လုပ်ပါ!</i>`;
+      `${t(userId, 'referral_title')}\n\n` +
+      `${inviteHint}\n\n` +
+      `${t(userId, 'referral_invited')} ${inviteCount}\n` +
+      `${t(userId, 'referral_credit_earned')} ${ref.totalCreditsEarned || 0} Credit\n` +
+      `${t(userId, 'credit_your_balance')} ${balance} Credit\n\n` +
+      `${t(userId, 'referral_your_link')}\n<code>${refLink}</code>\n\n` +
+      `<i>${t(userId, 'referral_earn_hint')}</i>`;
 
     return bot.editMessageText(text, {
       chat_id: chatId, message_id: messageId,
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [{ text: '💰 Credit Menu', callback_data: 'credit_menu' }],
-          [{ text: '« Back', callback_data: 'back_to_menu' }],
+          [{ text: t(userId, 'credit'), callback_data: 'credit_menu' }],
+          [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
         ],
       },
     });
@@ -810,7 +844,8 @@ async function handleCallback(bot, query) {
 
   // ─── Speed Test ───────────────────────────────────────────
   if (data === 'speed_test') {
-    bot.editMessageText('🚀 Speed Test စစ်ဆေးနေပါတယ်...', {
+    const lang = getUserLang(userId);
+    bot.editMessageText(lang === 'en' ? '🚀 Running Speed Test...' : '🚀 Speed Test စစ်ဆေးနေပါတယ်...', {
       chat_id: chatId, message_id: messageId,
     });
 
@@ -1021,11 +1056,11 @@ async function handleCallback(bot, query) {
     const username = query.from.username ? `@${escHtml(query.from.username)}` : 'N/A';
 
     let text =
-      `👤 <b>My Account</b>\n\n` +
-      `<b>Name:</b> ${userName}\n` +
-      `<b>Username:</b> ${username}\n` +
-      `<b>ID:</b> <code>${userId}</code>\n` +
-      `<b>Joined:</b> ${user ? new Date(user.joinedAt).toLocaleDateString('en-GB') : 'N/A'}\n\n`;
+      `${t(userId, 'account_title')}\n\n` +
+      `${t(userId, 'account_name')} ${userName}\n` +
+      `${t(userId, 'account_username')} ${username}\n` +
+      `${t(userId, 'account_id')} <code>${userId}</code>\n` +
+      `${t(userId, 'account_joined')} ${user ? new Date(user.joinedAt).toLocaleDateString('en-GB') : 'N/A'}\n\n`;
 
     if (hasTrial) {
       text += `🎁 <b>Trial Key:</b> ယူပြီး (${trialInfo.count}/${getTrialConfig().maxTrials})\n`;
@@ -1079,7 +1114,7 @@ async function handleCallback(bot, query) {
     return bot.editMessageText(text, {
       chat_id: chatId, message_id: messageId,
       parse_mode: 'HTML',
-      reply_markup: getBackKeyboard(),
+      reply_markup: getBackKeyboard(userId),
     });
   }
 
@@ -1091,13 +1126,13 @@ async function handleCallback(bot, query) {
     try { ratings = JSON.parse(fs.readFileSync(ratingsFile, 'utf8')); } catch {}
 
     const myRating = ratings[userId];
-    let text = `⭐ <b>Rating</b>\n\n`;
+    let text = `${t(userId, 'rating_title')}\n\n`;
     if (myRating) {
-      text += `သင့် Rating: ${'⭐'.repeat(myRating.stars)} (${myRating.stars}/5)\n`;
+      text += `${'⭐'.repeat(myRating.stars)} (${myRating.stars}/5)\n`;
       if (myRating.feedback) text += `💬 "${myRating.feedback}"\n`;
-      text += `\nRating ပြောင်းချင်ရင် အောက်က ⭐ နှိပ်ပါ။`;
+      text += `\n${t(userId, 'rating_prompt')}`;
     } else {
-      text += `Bot ကို Rating ပေးပါ!\nအောက်က ⭐ နှိပ်ပါ:`;
+      text += `${t(userId, 'rating_prompt')}`;
     }
 
     return bot.editMessageText(text, {
@@ -1114,7 +1149,7 @@ async function handleCallback(bot, query) {
             { text: '⭐⭐⭐⭐', callback_data: 'rate_4' },
             { text: '⭐⭐⭐⭐⭐', callback_data: 'rate_5' },
           ],
-          [{ text: '« Back to Menu', callback_data: 'back_to_menu' }],
+          [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
         ],
       },
     });
@@ -1138,17 +1173,17 @@ async function handleCallback(bot, query) {
     logUserAction(bot, query.from, '⭐ Rating', `${stars}/5 stars`);
 
     const text =
-      `⭐ <b>Rating ပေးပြီးပါပြီ!</b>\n\n` +
-      `သင့် Rating: ${'⭐'.repeat(stars)} (${stars}/5)\n\n` +
-      `💬 Feedback ရေးချင်ရင် အောက်က button နှိပ်ပါ:`;
+      `${t(userId, 'rating_thanks')}\n\n` +
+      `${'⭐'.repeat(stars)} (${stars}/5)\n\n` +
+      `${t(userId, 'rating_feedback')}`;
 
     return bot.editMessageText(text, {
       chat_id: chatId, message_id: messageId,
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [{ text: '💬 Feedback ရေးမယ်', callback_data: 'rate_feedback' }],
-          [{ text: '« Back to Menu', callback_data: 'back_to_menu' }],
+          [{ text: '💬 Feedback', callback_data: 'rate_feedback' }],
+          [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
         ],
       },
     });
@@ -1158,13 +1193,13 @@ async function handleCallback(bot, query) {
     const { setRatingFeedbackState } = require('./middleware/userLogger');
     setRatingFeedbackState(userId);
     return bot.editMessageText(
-      `💬 <b>Feedback</b>\n\nBot အကြောင်း feedback ရေးပေးပါ:`,
+      `💬 <b>Feedback</b>\n\n${t(userId, 'rating_feedback')}`,
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
-            [{ text: '« Cancel', callback_data: 'rating_menu' }],
+            [{ text: t(userId, 'coupon_cancel'), callback_data: 'rating_menu' }],
           ],
         },
       }
@@ -1174,24 +1209,26 @@ async function handleCallback(bot, query) {
   // ─── Contact Admin ─────────────────────────────────────────
   if (data === 'contact_admin') {
     const adminContact = process.env.ADMIN_CONTACT || 'https://t.me/JackFrozt_2k4';
+    const lang = getUserLang(userId);
 
-    const text =
-      `📞 *Admin ဆက်သွယ်ရန်*\n\n` +
-      `အကူအညီလိုအပ်ပါက Admin ထံ ဆက်သွယ်ပါ။\n\n` +
-      `*ဆက်သွယ်နိုင်တဲ့ အကြောင်းအရာများ:*\n` +
-      `• Key သက်တမ်းတိုးခြင်း\n` +
-      `• Premium key ဝယ်ယူခြင်း\n` +
-      `• Credit ဝယ်ယူခြင်း\n` +
-      `• ချိတ်ဆက်မှု ပြဿနာများ\n` +
-      `• အခြား အကူအညီများ`;
+    const text = lang === 'en'
+      ? `📞 *Contact Admin*\n\nFor any help, contact Admin.\n\n` +
+        `*You can contact for:*\n` +
+        `• Key extension\n• Buy Premium key\n• Buy Credit\n• Connection issues\n• Other help`
+      : `📞 *Admin ဆက်သွယ်ရန်*\n\n` +
+        `အကူအညီလိုအပ်ပါက Admin ထံ ဆက်သွယ်ပါ။\n\n` +
+        `*ဆက်သွယ်နိုင်တဲ့ အကြောင်းအရာများ:*\n` +
+        `• Key သက်တမ်းတိုးခြင်း\n• Premium key ဝယ်ယူခြင်း\n• Credit ဝယ်ယူခြင်း\n• ချိတ်ဆက်မှု ပြဿနာများ\n• အခြား အကူအညီများ`;
+
+    const contactBtn = lang === 'en' ? '📞 Contact Admin' : '📞 Admin ထံ ဆက်သွယ်မယ်';
 
     return bot.editMessageText(text, {
       chat_id: chatId, message_id: messageId,
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
-          [{ text: '📞 Admin ထံ ဆက်သွယ်မယ်', url: adminContact }],
-          [{ text: '« Back to Menu', callback_data: 'back_to_menu' }],
+          [{ text: contactBtn, url: adminContact }],
+          [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
         ],
       },
     });

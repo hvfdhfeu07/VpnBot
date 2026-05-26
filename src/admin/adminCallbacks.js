@@ -57,6 +57,10 @@ async function handleAdminCallback(bot, query) {
 
   // ─── Admin Menu ────────────────────────────────────────────
   if (data === 'admin_menu') {
+    // Clear any pending input states
+    delete broadcastState[`welcome_${userId}`];
+    delete broadcastState[String(userId)];
+    delete serverAdminState[userId];
     return bot.editMessageText('🔧 *Admin Panel*', {
       chat_id: chatId, message_id: messageId,
       parse_mode: 'Markdown',

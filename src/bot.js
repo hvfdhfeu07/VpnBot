@@ -464,6 +464,7 @@ bot.onText(/\/setchannel/, async (msg) => {
 
 bot.onText(/\/cancel/, (msg) => {
   clearBroadcast(msg.from.id);
+  clearWelcomeEdit(msg.from.id);
   clearAdminState(msg.from.id);
   clearCustomMsg(msg.from.id);
   clearKeyDelete(msg.from.id);
@@ -496,9 +497,9 @@ bot.on('callback_query', async (query) => {
     const isMember = await checkMembership(bot, query.from.id);
     if (isMember) {
       bot.answerCallbackQuery(query.id, { text: '✅ Join ပြီးပါပြီ!' });
+      const { t: tr } = require('./middleware/language');
       bot.editMessageText(
-        `🔐 *VPN Key Bot*\n\n` +
-        `Channel join ပြီးပါပြီ! အောက်က menu ကနေ ရွေးချယ်ပါ 👇`,
+        tr(String(query.from.id), 'welcome'),
         {
           chat_id: query.message.chat.id,
           message_id: query.message.message_id,

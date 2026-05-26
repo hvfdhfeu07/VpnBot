@@ -24,6 +24,16 @@ function clearAdminState(userId) {
   delete adminState[String(userId)];
 }
 
+function getActiveXuiClient(userId) {
+  const panelKey = adminState[`panel_${String(userId)}`];
+  if (panelKey) {
+    const { getClient: getPanelClient } = require('../vpn/panelManager');
+    const client = getPanelClient(panelKey);
+    if (client) return client;
+  }
+  return xuiClient;
+}
+
 async function handleXuiCallback(bot, query) {
   const chatId = query.message.chat.id;
   const messageId = query.message.message_id;
@@ -37,8 +47,57 @@ async function handleXuiCallback(bot, query) {
 
   bot.answerCallbackQuery(query.id);
 
-  // ─── X-UI Menu ─────────────────────────────────────────────
+  // Use selected panel's client for all operations
+  const activeClient = getActiveXuiClient(userId);
+
+  // ─── X-UI Panel Selection ───────────────────────────────────
   if (data === 'xui_menu') {
+    const { getAllPanels } = require('../vpn/panelManager');
+    const panels = getAllPanels();
+
+    if (panels.length > 0) {
+      const buttons = panels.map(p => {
+        const status = p.status === 'online' ? '🟢' : '🔴';
+        const type = p.type === 'trial' ? '🎁' : p.type === 'premium' ? '💎' : '🖥';
+        return [{ text: `${status} ${type} ${p.name}`, callback_data: `xui_selectpanel_${p.id}` }];
+      });
+      buttons.push([{ text: '🖥 Default Panel (env)', callback_data: 'xui_selectpanel_default' }]);
+      buttons.push([{ text: '« Admin Menu', callback_data: 'admin_menu' }]);
+
+      return bot.editMessageText('🌐 *X-UI Panel Management*\n\nPanel ရွေးပါ:', {
+        chat_id: chatId, message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: buttons },
+      });
+    }
+
+    // No panels configured — go straight to default panel
+    return bot.editMessageText('🌐 *X-UI Panel Management*', {
+      chat_id: chatId, message_id: messageId,
+      parse_mode: 'Markdown',
+      reply_markup: getXuiMenuKeyboard(),
+    });
+  }
+
+  // Panel selected — switch active xuiClient for this session
+  if (data.startsWith('xui_selectpanel_')) {
+    const panelKey = data.replace('xui_selectpanel_', '');
+    if (panelKey !== 'default') {
+      const { getClient: getPanelClient, getPanel } = require('../vpn/panelManager');
+      const panel = getPanel(panelKey);
+      const client = getPanelClient(panelKey);
+      if (client && panel) {
+        // Store selected panel in state
+        adminState[`panel_${userId}`] = panelKey;
+        return bot.editMessageText(`🌐 *X-UI Panel: ${panel.name}*`, {
+          chat_id: chatId, message_id: messageId,
+          parse_mode: 'Markdown',
+          reply_markup: getXuiMenuKeyboard(),
+        });
+      }
+    }
+    // Default panel
+    delete adminState[`panel_${userId}`];
     return bot.editMessageText('🌐 *X-UI Panel Management*', {
       chat_id: chatId, message_id: messageId,
       parse_mode: 'Markdown',
@@ -49,7 +108,7 @@ async function handleXuiCallback(bot, query) {
   // ─── Server Status ─────────────────────────────────────────
   if (data === 'xui_status') {
     try {
-      const res = await xuiClient.getServerStatus();
+      const res = await activeClient.getServerStatus();
       if (!res.success) throw new Error('Failed');
 
       const s = res.obj;
@@ -84,7 +143,7 @@ async function handleXuiCallback(bot, query) {
   // ─── List Inbounds ─────────────────────────────────────────
   if (data === 'xui_inbounds') {
     try {
-      const res = await xuiClient.listInbounds();
+      const res = await activeClient.listInbounds();
       if (!res.success) throw new Error('Failed to list inbounds');
 
       const inbounds = res.obj || [];
@@ -124,7 +183,7 @@ async function handleXuiCallback(bot, query) {
   if (data.startsWith('xui_ib_')) {
     const inboundId = parseInt(data.replace('xui_ib_', ''));
     try {
-      const inbound = await xuiClient.getInbound(inboundId);
+      const inbound = await activeClient.getInbound(inboundId);
       if (!inbound) throw new Error('Inbound not found');
 
       const settings = JSON.parse(inbound.settings);
@@ -191,7 +250,7 @@ async function handleXuiCallback(bot, query) {
     const clientUuid = parts.slice(1).join('_');
 
     try {
-      const res = await xuiClient.deleteClient(inboundId, clientUuid);
+      const res = await activeClient.deleteClient(inboundId, clientUuid);
       if (res.success) {
         return bot.editMessageText('✅ Client deleted successfully.', {
           chat_id: chatId, message_id: messageId,
@@ -212,7 +271,7 @@ async function handleXuiCallback(bot, query) {
   if (data.startsWith('xui_clients_')) {
     const inboundId = parseInt(data.replace('xui_clients_', ''));
     try {
-      const inbound = await xuiClient.getInbound(inboundId);
+      const inbound = await activeClient.getInbound(inboundId);
       if (!inbound) throw new Error('Inbound not found');
 
       const settings = JSON.parse(inbound.settings);
@@ -245,7 +304,7 @@ async function handleXuiCallback(bot, query) {
     const clientUuid = parts.slice(1).join('_');
 
     try {
-      const inbound = await xuiClient.getInbound(inboundId);
+      const inbound = await activeClient.getInbound(inboundId);
       if (!inbound) throw new Error('Inbound not found');
 
       const settings = JSON.parse(inbound.settings);
@@ -253,7 +312,7 @@ async function handleXuiCallback(bot, query) {
       if (!client) throw new Error('Client not found');
 
       const serverHost = process.env.XUI_SERVER_HOST || '178.128.80.123';
-      const link = xuiClient.generateLink(inbound, client, serverHost);
+      const link = activeClient.generateLink(inbound, client, serverHost);
 
       const expiry = client.expiryTime > 0
         ? new Date(client.expiryTime).toLocaleString()
@@ -291,12 +350,52 @@ async function handleXuiCallback(bot, query) {
 
   if (data.startsWith('xui_newinb_')) {
     const protocol = data.replace('xui_newinb_', '');
+
+    if (protocol === 'shadowsocks') {
+      // Show encryption method selection first
+      const methods = [
+        'aes-256-gcm', 'aes-128-gcm', 'chacha20-poly1305',
+        'chacha20-ietf-poly1305', 'xchacha20-poly1305',
+        '2022-blake3-aes-256-gcm', '2022-blake3-aes-128-gcm',
+        '2022-blake3-chacha20-poly1305',
+      ];
+      const buttons = methods.map(m => [{ text: `🔐 ${m}`, callback_data: `xui_ssenc_${m}` }]);
+      buttons.push([{ text: '« Back', callback_data: 'xui_create_inbound' }]);
+
+      return bot.editMessageText(
+        `➕ *Create SHADOWSOCKS Inbound*\n\n🔐 Encryption method ရွေးပါ:`,
+        {
+          chat_id: chatId, message_id: messageId,
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: buttons },
+        }
+      );
+    }
+
     setAdminState(userId, { action: 'create_inbound', protocol });
 
     return bot.editMessageText(
       `➕ *Create ${protocol.toUpperCase()} Inbound*\n\n` +
       `Send: \`remark|port\`\n\n` +
-      `Example: \`MyVMess|8443\``,
+      `Example: \`My${protocol}|8443\``,
+      {
+        chat_id: chatId, message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: getXuiBackKeyboard(),
+      }
+    );
+  }
+
+  // Shadowsocks encryption method selected
+  if (data.startsWith('xui_ssenc_')) {
+    const method = data.replace('xui_ssenc_', '');
+    setAdminState(userId, { action: 'create_inbound', protocol: 'shadowsocks', method });
+
+    return bot.editMessageText(
+      `➕ *Create SHADOWSOCKS Inbound*\n\n` +
+      `🔐 Encryption: *${method}*\n\n` +
+      `Send: \`remark|port\`\n\n` +
+      `Example: \`MySS|8443\``,
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'Markdown',
@@ -309,7 +408,7 @@ async function handleXuiCallback(bot, query) {
   if (data.startsWith('xui_delib_')) {
     const inboundId = parseInt(data.replace('xui_delib_', ''));
     try {
-      const inbound = await xuiClient.getInbound(inboundId);
+      const inbound = await activeClient.getInbound(inboundId);
       if (!inbound) throw new Error('Inbound not found');
       const settings = JSON.parse(inbound.settings);
       const clientCount = (settings.clients || []).length;
@@ -346,7 +445,7 @@ async function handleXuiCallback(bot, query) {
   if (data.startsWith('xui_confirmdelib_')) {
     const inboundId = parseInt(data.replace('xui_confirmdelib_', ''));
     try {
-      const res = await xuiClient.deleteInbound(inboundId);
+      const res = await activeClient.deleteInbound(inboundId);
       if (res.success) {
         return bot.editMessageText('✅ Inbound ဖျက်ပြီးပါပြီ!', {
           chat_id: chatId, message_id: messageId,
@@ -373,6 +472,7 @@ async function handleXuiAdminMessage(bot, msg) {
 
   const chatId = msg.chat.id;
   const text = msg.text;
+  const activeClient = getActiveXuiClient(userId);
 
   if (text === '/cancel') {
     clearAdminState(userId);
@@ -394,19 +494,20 @@ async function handleXuiAdminMessage(bot, msg) {
     try {
       let res;
       if (state.protocol === 'vmess') {
-        res = await xuiClient.createVMessInbound(remark.trim(), port);
+        res = await activeClient.createVMessInbound(remark.trim(), port);
       } else if (state.protocol === 'vless') {
-        res = await xuiClient.createVLESSInbound(remark.trim(), port);
+        res = await activeClient.createVLESSInbound(remark.trim(), port);
       } else if (state.protocol === 'shadowsocks') {
-        res = await xuiClient.createShadowsocksInbound(remark.trim(), port);
+        res = await activeClient.createShadowsocksInbound(remark.trim(), port, { method: state.method || 'aes-256-gcm' });
       }
 
+      const methodInfo = state.method ? `\n*Encryption:* ${state.method}` : '';
       clearAdminState(userId);
 
       if (res && res.success) {
         bot.sendMessage(chatId,
           `✅ *${state.protocol.toUpperCase()} Inbound Created!*\n\n` +
-          `*Remark:* ${remark.trim()}\n*Port:* ${port}`,
+          `*Remark:* ${remark.trim()}\n*Port:* ${port}${methodInfo}`,
           { parse_mode: 'Markdown' }
         );
       } else {
@@ -429,10 +530,10 @@ async function handleXuiAdminMessage(bot, msg) {
 
     try {
       // Get inbound to determine protocol
-      const inboundInfo = await xuiClient.getInbound(state.inboundId);
+      const inboundInfo = await activeClient.getInbound(state.inboundId);
       const protocol = inboundInfo ? inboundInfo.protocol : 'vmess';
 
-      const clientConfig = xuiClient.createClientConfig(email, {
+      const clientConfig = activeClient.createClientConfig(email, {
         expiryDays: expiryDays || 0,
         totalGB,
         limitIp,
@@ -440,13 +541,19 @@ async function handleXuiAdminMessage(bot, msg) {
         protocol,
       });
 
-      const res = await xuiClient.addClient(state.inboundId, clientConfig);
+      const res = await activeClient.addClient(state.inboundId, clientConfig);
       clearAdminState(userId);
 
       if (res.success) {
-        const inbound = await xuiClient.getInbound(state.inboundId);
-        const serverHost = process.env.XUI_SERVER_HOST || '178.128.80.123';
-        const link = inbound ? xuiClient.generateLink(inbound, clientConfig, serverHost) : null;
+        const inbound = await activeClient.getInbound(state.inboundId);
+        let serverHost = process.env.XUI_SERVER_HOST || '178.128.80.123';
+        const panelKey = adminState[`panel_${userId}`];
+        if (panelKey) {
+          const { getPanel: gp } = require('../vpn/panelManager');
+          const p = gp(panelKey);
+          if (p && p.serverHost) serverHost = p.serverHost;
+        }
+        const link = inbound ? activeClient.generateLink(inbound, clientConfig, serverHost) : null;
 
         const expiry = expiryDays > 0 ? `${expiryDays} days` : 'Unlimited';
         const dataLimit = totalGB > 0 ? `${parts[2].trim()} GB` : 'Unlimited';

@@ -4,7 +4,7 @@ const path = require('path');
 const WELCOME_FILE = path.join(__dirname, '../../data/welcome.json');
 
 const DEFAULT_WELCOME = {
-  text: `🔐 *VPN Key Bot*\n\nမင်္ဂလာပါ {name}! 👋\n\nဒီ Bot မှာ VPN Key ထုတ်ယူနိုင်ပါတယ်။\n\n🎁 *Trial Key* — Free trial key ထုတ်ယူရန်\n💎 *Premium Key* — Premium key ဝယ်ယူရန်\n📦 *My Key* — ယူထားတဲ့ key ပြန်ကြည့်ရန်\n👤 *My Account* — ကိုယ့်အကောင့် အချက်အလက်\n\nအောက်က menu ကနေ ရွေးချယ်ပါ 👇`,
+  text: `━━━━━━━━━━━━━━━━━━━\n🔐 *VPN Key Bot*\n━━━━━━━━━━━━━━━━━━━\n\nမင်္ဂလာပါ {name}! 👋\n\nဒီ Bot မှာ VPN Key ထုတ်ယူနိုင်ပါတယ်။\n\n🎁 *Trial Key* — Free trial key ထုတ်ယူရန်\n💎 *Premium Key* — Premium key ဝယ်ယူရန်\n📦 *My Key* — ယူထားတဲ့ key ပြန်ကြည့်ရန်\n💰 *Credit* — Credit လက်ကျန်စစ်ရန်\n👤 *My Account* — ကိုယ့်အကောင့် အချက်အလက်\n\n👇 အောက်က menu ကနေ ရွေးချယ်ပါ`,
 };
 
 function loadWelcome() {

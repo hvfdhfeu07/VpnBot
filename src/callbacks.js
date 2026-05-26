@@ -7,7 +7,7 @@ const xuiClient = require('./vpn/xuiClient');
 const { getFirstPremiumPanel, getClient } = require('./vpn/panelManager');
 const { getUser } = require('./admin/userManager');
 const { logUserAction, logKeyClaimWithQR } = require('./middleware/userLogger');
-const { getUserLang, setUserLang } = require('./middleware/language');
+const { getUserLang, setUserLang, t } = require('./middleware/language');
 const QRCode = require('qrcode');
 
 async function handleCallback(bot, query) {
@@ -23,15 +23,15 @@ async function handleCallback(bot, query) {
     // If current message is a photo (QR code), delete it and send a new text message
     if (query.message.photo || query.message.document) {
       await bot.deleteMessage(chatId, messageId).catch(() => {});
-      return bot.sendMessage(chatId, '🔐 *VPN Key Bot*\n\nရွေးချယ်ပါ:', {
+      return bot.sendMessage(chatId, t(userId, 'welcome'), {
         parse_mode: 'Markdown',
-        reply_markup: getMainMenuKeyboard(),
+        reply_markup: getMainMenuKeyboard(userId),
       });
     }
-    return bot.editMessageText('🔐 *VPN Key Bot*\n\nရွေးချယ်ပါ:', {
+    return bot.editMessageText(t(userId, 'welcome'), {
       chat_id: chatId, message_id: messageId,
       parse_mode: 'Markdown',
-      reply_markup: getMainMenuKeyboard(),
+      reply_markup: getMainMenuKeyboard(userId),
     });
   }
 
@@ -39,17 +39,17 @@ async function handleCallback(bot, query) {
   if (data === 'trial_key') {
     if (hasUsedTrial(userId)) {
       return bot.editMessageText(
-        '🎁 *Trial Key*\n\n' +
-        '❌ Trial key ကို တစ်ကြိမ်သာ ထုတ်ခွင့်ရှိပါတယ်။\n' +
-        'သင် trial key ယူပြီးပါပြီ။\n\n' +
-        '📦 My Key မှာ ပြန်ကြည့်နိုင်ပါတယ်။',
+        `${t(userId, 'trial_info_title')}\n\n` +
+        `${t(userId, 'trial_used')}\n` +
+        `${t(userId, 'trial_already_used')}\n\n` +
+        `${t(userId, 'trial_check_mykey')}`,
         {
           chat_id: chatId, message_id: messageId,
           parse_mode: 'Markdown',
           reply_markup: {
             inline_keyboard: [
-              [{ text: '📦 My Key ကြည့်မယ်', callback_data: 'menu_mykey' }],
-              [{ text: '« Back', callback_data: 'back_to_menu' }],
+              [{ text: t(userId, 'trial_view_mykey'), callback_data: 'menu_mykey' }],
+              [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
             ],
           },
         }
@@ -58,20 +58,20 @@ async function handleCallback(bot, query) {
 
     const config = getTrialConfig();
     return bot.editMessageText(
-      `🎁 *Trial Key*\n\n` +
-      `Free trial key ထုတ်ယူနိုင်ပါတယ်!\n\n` +
-      `📦 Data: *${config.totalGB} GB*\n` +
-      `📅 Expiry: *${config.expiryDays} Days*\n` +
-      `📱 Device Limit: *${config.ipLimit}*\n` +
-      `🔐 Encryption: *aes-256-gcm*\n\n` +
-      `⚠️ တစ်ယောက်ကို *${config.maxTrials} ကြိမ်* သာ ထုတ်ခွင့်ရှိပါတယ်။`,
+      `${t(userId, 'trial_info_title')}\n\n` +
+      `${t(userId, 'trial_free_desc')}\n\n` +
+      `${t(userId, 'trial_data')}: *${config.totalGB} GB*\n` +
+      `${t(userId, 'trial_expiry')}: *${config.expiryDays} Days*\n` +
+      `${t(userId, 'trial_device')}: *${config.ipLimit}*\n` +
+      `${t(userId, 'trial_encryption')}: *aes-256-gcm*\n\n` +
+      `⚠️ ${t(userId, 'trial_limit_warning')} *${config.maxTrials}* ${t(userId, 'trial_limit_times')}`,
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🎁 Trial Key ထုတ်ယူမယ်', callback_data: 'trial_claim' }],
-            [{ text: '« Back', callback_data: 'back_to_menu' }],
+            [{ text: t(userId, 'trial_claim_btn'), callback_data: 'trial_claim' }],
+            [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
           ],
         },
       }
@@ -81,16 +81,16 @@ async function handleCallback(bot, query) {
   if (data === 'trial_claim') {
     if (hasUsedTrial(userId)) {
       return bot.editMessageText(
-        '❌ Trial key ကို တစ်ကြိမ်သာ ထုတ်ခွင့်ရှိပါတယ်။',
+        t(userId, 'trial_used'),
         {
           chat_id: chatId, message_id: messageId,
           parse_mode: 'Markdown',
-          reply_markup: getBackKeyboard(),
+          reply_markup: getBackKeyboard(userId),
         }
       );
     }
 
-    bot.editMessageText('⏳ Trial key ထုတ်ပေးနေပါတယ်...', {
+    bot.editMessageText(t(userId, 'trial_generating'), {
       chat_id: chatId, message_id: messageId,
     });
 
@@ -99,7 +99,7 @@ async function handleCallback(bot, query) {
     if (!result.success) {
       return bot.editMessageText(`❌ ${result.msg}`, {
         chat_id: chatId, message_id: messageId,
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
 
@@ -120,13 +120,13 @@ async function handleCallback(bot, query) {
     const customMsg = config.customMessage ? `\n${escHtml(config.customMessage)}\n` : '';
 
     const caption =
-      `🎁 <b>Trial Key ရရှိပါပြီ!</b>\n\n` +
+      `<b>${t(userId, 'trial_received')}</b>\n\n` +
       `📅 Expiry: <b>${expiryDate}</b>\n` +
       `📦 Data: <b>${d.dataGB} GB</b>\n` +
       `📱 Device: <b>${d.ipLimit}</b>\n\n` +
       `🔗 <b>Config Link:</b>\n<code>${escHtml(d.link)}</code>\n` +
       customMsg +
-      `\n<i>Link ကို copy ပြီး VPN app ထဲ import လုပ်ပါ။</i>`;
+      `\n<i>${t(userId, 'trial_copy_hint')}</i>`;
 
     try {
       const qrBuffer = await QRCode.toBuffer(d.link, { width: 300, margin: 2 });
@@ -134,13 +134,13 @@ async function handleCallback(bot, query) {
       await bot.sendPhoto(chatId, qrBuffer, {
         caption,
         parse_mode: 'HTML',
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     } catch {
       await bot.editMessageText(caption, {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       });
     }
     return;
@@ -880,7 +880,7 @@ async function handleCallback(bot, query) {
       {
         chat_id: chatId, message_id: messageId,
         parse_mode: 'HTML',
-        reply_markup: getBackKeyboard(),
+        reply_markup: getBackKeyboard(userId),
       }
     );
   }
@@ -895,23 +895,23 @@ async function handleCallback(bot, query) {
 
     if (!hasKeys) {
       return bot.editMessageText(
-        '📦 *My Key*\n\n' +
-        'Key မရှိသေးပါ။',
+        `${t(userId, 'mykey_title')}\n\n` +
+        t(userId, 'mykey_empty'),
         {
           chat_id: chatId, message_id: messageId,
           parse_mode: 'Markdown',
           reply_markup: {
             inline_keyboard: [
-              [{ text: '🎁 Trial Key ထုတ်ယူမယ်', callback_data: 'trial_key' }],
-              [{ text: '💎 Premium Key ဝယ်မယ်', callback_data: 'premium_menu' }],
-              [{ text: '« Back', callback_data: 'back_to_menu' }],
+              [{ text: t(userId, 'mykey_get_trial'), callback_data: 'trial_key' }],
+              [{ text: t(userId, 'mykey_buy_premium'), callback_data: 'premium_menu' }],
+              [{ text: t(userId, 'back'), callback_data: 'back_to_menu' }],
             ],
           },
         }
       );
     }
 
-    let text = '📦 *My Keys*\n\n';
+    let text = `${t(userId, 'mykey_title')}\n\n`;
 
     // Helper: get client stats from the correct panel
     async function getClientStats(email, panelId) {
@@ -924,7 +924,7 @@ async function handleCallback(bot, query) {
     }
 
     if (trialInfo && trialInfo.keys.length > 0) {
-      text += '🎁 *Trial Key:*\n';
+      text += `${t(userId, 'mykey_trial')}\n`;
       for (const key of trialInfo.keys) {
         const client = await getClientStats(key.email, key.panelId);
         if (client) {
@@ -944,7 +944,7 @@ async function handleCallback(bot, query) {
     }
 
     if (premiumKeys.length > 0) {
-      text += '💎 *Premium Keys:*\n';
+      text += `${t(userId, 'mykey_premium')}\n`;
       for (const key of premiumKeys) {
         const client = await getClientStats(key.email, key.panelId);
         if (client) {
@@ -959,7 +959,6 @@ async function handleCallback(bot, query) {
           const status = !client.enable ? '🔴 Disabled' : isExpired ? '🔴 Expired' : '🟢 Active';
           text += `  ${status} | ${key.planName || 'Premium'} | 📊 ${usedGB}/${totalGB} GB | 📅 ${expiry} (${daysLeft}d)\n`;
         } else {
-          // Show stored info even if live stats unavailable
           const expiry = key.expiryDate || 'N/A';
           text += `  📦 ${key.planName || 'Premium'} | 📅 ${expiry} | 📊 ${key.dataGB || 0} GB\n`;
         }
@@ -967,7 +966,7 @@ async function handleCallback(bot, query) {
       }
     }
 
-    text += `_Link ကို copy ပြီး VPN app ထဲ import လုပ်ပါ။_`;
+    text += t(userId, 'mykey_copy_hint');
 
     const allKeys = [];
     if (trialInfo && trialInfo.keys) allKeys.push(...trialInfo.keys);
@@ -975,7 +974,7 @@ async function handleCallback(bot, query) {
     const qrButtons = allKeys.map((k, i) => ({ text: `📱 QR #${i + 1}`, callback_data: `qr_key_${i}` }));
     const buttons = [];
     if (qrButtons.length > 0) buttons.push(qrButtons.slice(0, 3));
-    buttons.push([{ text: '« Back to Menu', callback_data: 'back_to_menu' }]);
+    buttons.push([{ text: t(userId, 'back'), callback_data: 'back_to_menu' }]);
 
     return bot.editMessageText(text, {
       chat_id: chatId, message_id: messageId,

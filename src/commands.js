@@ -1,15 +1,17 @@
 const { getMainMenuKeyboard } = require('./keyboards');
 const { getWelcomeText } = require('./middleware/welcomeManager');
+const { t } = require('./middleware/language');
 
 function handleCommand(bot, msg, command) {
   const chatId = msg.chat.id;
+  const userId = String(msg.from.id);
   const userName = msg.from.first_name || 'User';
 
   switch (command) {
     case 'start':
       bot.sendMessage(chatId,
         getWelcomeText(userName),
-        { parse_mode: 'Markdown', reply_markup: getMainMenuKeyboard() }
+        { parse_mode: 'Markdown', reply_markup: getMainMenuKeyboard(userId) }
       );
       break;
 
@@ -30,7 +32,7 @@ function handleCommand(bot, msg, command) {
     case 'menu':
       bot.sendMessage(chatId, getWelcomeText(userName), {
         parse_mode: 'Markdown',
-        reply_markup: getMainMenuKeyboard(),
+        reply_markup: getMainMenuKeyboard(userId),
       });
       break;
 

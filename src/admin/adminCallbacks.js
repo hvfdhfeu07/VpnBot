@@ -176,17 +176,36 @@ async function handleAdminCallback(bot, query) {
     text += `💎 <b>Premium:</b> ${premium.length} ခု\n`;
     text += `👥 <b>Referrals:</b> ${ref.invitedUsers.length} ယောက်\n\n`;
 
-    // Live key data from X-UI
+    // Live key data from X-UI — search across all panels
     const allKeys = [];
     if (trial && trial.keys) allKeys.push(...trial.keys.map(k => ({ ...k, type: 'Trial' })));
     allKeys.push(...premium.map(k => ({ ...k, type: 'Premium' })));
 
     if (allKeys.length > 0) {
       try {
-        const clients = await xuiClient.getAllClients();
+        // Collect clients from all panels
+        let allClients = [];
+        const panels = getAllPanels();
+        for (const p of panels) {
+          try {
+            const pc = getClient(p.id);
+            if (pc) {
+              const clients = await pc.getAllClients();
+              allClients.push(...clients);
+            }
+          } catch {}
+        }
+        // Fallback: also try legacy default xuiClient
+        try {
+          const defaultClients = await xuiClient.getAllClients();
+          for (const dc of defaultClients) {
+            if (!allClients.some(c => c.email === dc.email)) allClients.push(dc);
+          }
+        } catch {}
+
         text += `<b>🔑 Keys:</b>\n`;
         for (const key of allKeys) {
-          const client = clients.find(c => c.email === key.email);
+          const client = allClients.find(c => c.email === key.email);
           if (client) {
             const usedGB = ((client.up + client.down) / 1024 / 1024 / 1024).toFixed(2);
             const totalGB = client.total > 0 ? (client.total / 1024 / 1024 / 1024).toFixed(0) : '∞';
@@ -197,6 +216,8 @@ async function handleAdminCallback(bot, query) {
             const daysLeft = client.expiryTime > 0 ? Math.max(0, Math.ceil((client.expiryTime - now) / 86400000)) : '∞';
             text += `  ${status} ${key.type} | ${usedGB}/${totalGB} GB | ${expiry} (${daysLeft}d)\n`;
             text += `  <code>${key.email}</code>\n`;
+          } else {
+            text += `  ⚪ ${key.type} | <code>${key.email}</code> (panel မှာ မတွေ့)\n`;
           }
         }
       } catch {}
@@ -2379,10 +2400,11 @@ async function handleServerAdminMessage(bot, msg) {
   const chatId = msg.chat.id;
 
   if (state.action === 'add_server' && state.step === 'name') {
+    const escHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const newServer = addServer({ name: text, type: 'trial' });
     delete serverAdminState[userId];
     bot.sendMessage(chatId,
-      `✅ Server <b>${text}</b> ထည့်ပြီးပါပြီ\n\nPanel ချိတ်ခြင်း၊ Type ပြောင်းခြင်း servers menu မှာ ဆက်လုပ်ပါ`,
+      `✅ Server <b>${escHtml(text)}</b> ထည့်ပြီးပါပြီ\n\nPanel ချိတ်ခြင်း၊ Type ပြောင်းခြင်း servers menu မှာ ဆက်လုပ်ပါ`,
       {
         parse_mode: 'HTML',
         reply_markup: getAdminServerActionsKeyboard(newServer.id),
@@ -2392,11 +2414,12 @@ async function handleServerAdminMessage(bot, msg) {
   }
 
   if (state.action === 'edit_server_name') {
+    const escHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const server = updateServer(state.serverId, { name: text });
     delete serverAdminState[userId];
     if (server) {
       bot.sendMessage(chatId,
-        `✅ Server name ကို <b>${text}</b> ပြောင်းပြီးပါပြီ`,
+        `✅ Server name ကို <b>${escHtml(text)}</b> ပြောင်းပြီးပါပြီ`,
         {
           parse_mode: 'HTML',
           reply_markup: getAdminServerActionsKeyboard(state.serverId),

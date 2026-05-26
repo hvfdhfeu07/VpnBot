@@ -479,7 +479,7 @@ bot.onText(/\/cancel/, (msg) => {
   clearPanelState(msg.from.id);
   clearServerAdminState(msg.from.id);
   adminOrderState.delete(String(msg.from.id));
-  bot.sendMessage(msg.chat.id, 'Cancelled.', { reply_markup: getMainMenuKeyboard() });
+  bot.sendMessage(msg.chat.id, 'Cancelled.', { reply_markup: getMainMenuKeyboard(String(msg.from.id)) });
 });
 
 // ─── Callback Query Handler ─────────────────────────────────
@@ -503,7 +503,7 @@ bot.on('callback_query', async (query) => {
           chat_id: query.message.chat.id,
           message_id: query.message.message_id,
           parse_mode: 'Markdown',
-          reply_markup: getMainMenuKeyboard(),
+          reply_markup: getMainMenuKeyboard(String(query.from.id)),
         }
       );
       logUserAction(bot, query.from, '📢 Channel Joined', 'User joined the required channel');
@@ -1122,11 +1122,11 @@ bot.on('message', async (msg) => {
       const balance = getBalance(msg.from.id);
       await bot.sendMessage(msg.chat.id,
         `✅ Coupon ရရှိပါပြီ!\n💰 +${result.credits} Credit\n💰 Balance: ${balance}`,
-        { reply_markup: getMainMenuKeyboard() }
+        { reply_markup: getMainMenuKeyboard(String(msg.from.id)) }
       );
       logUserAction(bot, msg.from, '🎟 Coupon Redeemed', `Code: ${msg.text.trim()} | +${result.credits} Credit`);
     } else {
-      await bot.sendMessage(msg.chat.id, `❌ ${result.msg}`, { reply_markup: getMainMenuKeyboard() });
+      await bot.sendMessage(msg.chat.id, `❌ ${result.msg}`, { reply_markup: getMainMenuKeyboard(String(msg.from.id)) });
     }
     return;
   }
@@ -1145,17 +1145,17 @@ bot.on('message', async (msg) => {
       logUserAction(bot, msg.from, '💬 Feedback', `${ratings[uid].stars}/5 stars | "${msg.text.trim()}"`);
       bot.sendMessage(msg.chat.id,
         `✅ Feedback ရေးပြီးပါပြီ! ကျေးဇူးတင်ပါတယ်!\n\n⭐ ${ratings[uid].stars}/5 | 💬 "${msg.text.trim()}"`,
-        { reply_markup: getMainMenuKeyboard() }
+        { reply_markup: getMainMenuKeyboard(uid) }
       );
     } else {
-      bot.sendMessage(msg.chat.id, '❌ Rating အရင်ပေးပါ။', { reply_markup: getMainMenuKeyboard() });
+      bot.sendMessage(msg.chat.id, '❌ Rating အရင်ပေးပါ။', { reply_markup: getMainMenuKeyboard(uid) });
     }
     return;
   }
 
   bot.sendMessage(msg.chat.id,
     'Menu ကို အသုံးပြုပါ:',
-    { reply_markup: getMainMenuKeyboard() }
+    { reply_markup: getMainMenuKeyboard(String(msg.from.id)) }
   );
 });
 

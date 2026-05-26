@@ -172,10 +172,25 @@ class XUIClient {
     } catch (e) {
       result = await this.request('post', `/panel/api/inbounds/${inboundId}/delClient/${identifier}`);
     }
-    if (result.success) return result;
 
-    // If failed (e.g. last client in inbound), remove client from settings manually
-    console.log(`[deleteClient] Normal delete failed: ${result.msg}. Trying manual removal.`);
+    // Verify deletion actually happened (some panels report success but don't remove SS clients)
+    if (result.success) {
+      const inbound = await this.getInbound(inboundId);
+      if (inbound) {
+        const settings = JSON.parse(inbound.settings);
+        const stillExists = (settings.clients || []).some(c =>
+          (email && c.email === email) || (clientUuid && c.id === clientUuid)
+        );
+        if (!stillExists) return result;
+        console.log(`[deleteClient] API reported success but client still exists. Falling back to manual removal.`);
+      } else {
+        return result;
+      }
+    } else {
+      console.log(`[deleteClient] Normal delete failed: ${result.msg}. Trying manual removal.`);
+    }
+
+    // Remove client from settings manually
     const inbound = await this.getInbound(inboundId);
     if (!inbound) return result;
 
